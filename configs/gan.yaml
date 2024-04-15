@@ -1,0 +1,26 @@
+run_save_dir: "../run/infogan/"
+result_file: result.csv
+use_model: "lineargan"
+#score: "MAHALA"
+max_fpr : 0.1
+mtid_class_num: 23
+
+img_size: 32
+latent_dim: 62
+code_dim: 2
+class_num: 10
+channels: 1
+sample_interval: 400
+
+fit:
+  epochs : 80
+  batch_size : 64
+  learning_rate: 0.0002
+  b1: 0.5
+  b2: 0.999
+  momentum: 0.5
+  log_interval: 10
+  shuffle : True
+  validation_split : 0.1
+  verbose : 1
+  random_seed: 3407

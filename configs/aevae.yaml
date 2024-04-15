@@ -1,0 +1,20 @@
+run_save_dir: "../run/autoencoder/"
+result_file: result.csv
+use_model: "vae"
+#score: "MAHALA"
+max_fpr : 0.1
+mtid_class_num: 23
+
+in_channels: 1
+latent_dim: 128
+
+fit:
+  epochs : 20
+  batch_size : 64
+  kld_weight: 0.00025
+  shuffle : True
+  LR: 0.005
+  weight_decay: 0.0
+  scheduler_gamma: 0.95
+  validation_split : 0.1
+  verbose : 1
