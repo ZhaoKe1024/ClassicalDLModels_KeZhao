@@ -9,13 +9,15 @@ import random
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+import pyro
+from pyro.infer import SVI, Trace_ELBO
 import torch
 import torchvision
 from torchvision import transforms
 from torch.utils.data import DataLoader, random_split
 from srutils import utils
 from dlkit.modules.func import onehot
-from dlkit.models.vaeconv_cond import VAE, vae_loss
+from dlkit.models.vaeconv_cond import VAE, vae_loss, VAESVI
 
 
 class TrainerCVAEMNIST(object):
@@ -81,14 +83,22 @@ class TrainerCVAEMNIST(object):
                                                        shuffle=False)
         print("Built Dataset and DataLoader")
 
-    def setup_models(self):
-        self.model = VAE(shape=self.configs["img_size"], nhid=self.configs["d"], iscond=self.configs["iscond"],
-                         cond_dim=self.configs["cond_dim"])
+    def setup_models(self, model_name="VAE"):
+        if model_name == "VAE":
+            self.model = VAE(shape=self.configs["img_size"], nhid=self.configs["d"], iscond=self.configs["iscond"],
+                             cond_dim=self.configs["cond_dim"])
+            self.loss_fn = vae_loss
+            if self.istrain:
+                self.optim = torch.optim.Adam(self.model.parameters(), lr=self.configs["lr"],
+                                              weight_decay=self.configs["weight_decay"])
+        elif model_name == "VAESVI":
+            self.model = VAESVI(shape=self.configs["img_size"], nhid=self.configs["d"], iscond=self.configs["iscond"],
+                                cond_dim=self.configs["cond_dim"])
+            self.loss_fn = vae_loss
+            if self.istrain:
+                adam_params = {"lr": self.configs["lr"], "betas": (0.95, 0.999)}
+                self.optim = pyro.optim.Adam(adam_params)
         self.model.to(self.device)
-        self.loss_fn = vae_loss
-        if self.istrain:
-            self.optim = torch.optim.Adam(self.model.parameters(), lr=self.configs["lr"],
-                                          weight_decay=self.configs["weight_decay"])
         print("Built Model and Optimizer and Loss Function")
 
     def data_mix(self, x, y):
@@ -154,7 +164,8 @@ class TrainerCVAEMNIST(object):
                     if self.configs["ismix"]:
                         mix_x, mix_y = self.data_mix(x, y)
                         decoded_data, latent_mean, latent_logvar = self.model(mix_x, mix_y)
-                        loss_value = self.loss_fn(mix_x, decoded_data, latent_mean, latent_logvar, kl_weight=self.kl_weight)
+                        loss_value = self.loss_fn(mix_x, decoded_data, latent_mean, latent_logvar,
+                                                  kl_weight=self.kl_weight)
                     else:
                         decoded_data, latent_mean, latent_logvar = self.model(x, y)
                         loss_value = self.loss_fn(x, decoded_data, latent_mean, latent_logvar, kl_weight=self.kl_weight)
@@ -248,11 +259,104 @@ class TrainerCVAEMNIST(object):
         plt.savefig(self.run_save_dir + resume_path + "/generate_test_1.png", format="png", dpi=300)
         plt.show()
 
+    def train_svi(self):
+        """ SVI训练"""
+        pyro.clear_param_store()
+        utils.setup_seed(3407)
+        self.__setup_dataset()
+        self.setup_models(model_name="VAESVI")
+        print(self.configs)
+        self.model.train()
+        elbo = Trace_ELBO()
+        svi = SVI(self.model.model, self.model.guide, self.optim, loss=elbo)
+        # diz_loss = {"train_loss": [], "val_loss": []}
+        train_elbo = []
+        test_elbo = []
+        for epoch in range(self.configs["epochs"]):
+            epoch_loss = 0.0
+            for i, (x, y) in enumerate(self.train_loader):
+                x = x.to(self.device)
+                epoch_loss += svi.step(x)
+            normalizer_train = len(self.train_loader)
+            total_epoch_loss_train = epoch_loss / normalizer_train
+            train_elbo.append(total_epoch_loss_train)
+            print(
+                "[epoch %03d]  average training loss: %.4f"
+                % (epoch, total_epoch_loss_train)
+            )
+
+            if epoch % 1 == 0:
+                # initialize loss accumulator
+                test_loss = 0.0
+                # compute the loss over the entire test set
+                for i, (x, _) in enumerate(self.valid_loader):
+                    # if on GPU put mini-batch into CUDA memory
+                    x = x.cuda()
+                    # compute ELBO estimate and accumulate loss
+                    test_loss += svi.evaluate_loss(x)
+
+                    # pick three random test images from the first mini-batch and
+                    # visualize how well we're reconstructing them
+                    if i == 0:
+                        # if args.visdom_flag:
+                        #     plot_vae_samples(vae, vis)
+                        reco_indices = np.random.randint(0, x.shape[0], 3)
+                        for index in reco_indices:
+                            test_img = x[index, :]
+                            reco_img = self.model.reconstruct_img(test_img)
+                            # vis.image(
+                            #     test_img.reshape(28, 28).detach().cpu().numpy(),
+                            #     opts={"caption": "test image"},
+                            # )
+                            # vis.image(
+                            #     reco_img.reshape(28, 28).detach().cpu().numpy(),
+                            #     opts={"caption": "reconstructed image"},
+                            # )
+                            plt.figure()
+                            plt.subplot(1, 2, 1)
+                            plt.imshow(test_img.reshape(28, 28).detach().cpu().numpy())
+                            plt.subplot(1, 2, 2)
+                            plt.imshow(reco_img.reshape(28, 28).detach().cpu().numpy())
+                            plt.savefig(self.run_save_dir + f"test_img_epoch_{epoch}.png", format="png", dpi=300)
+                            plt.close()
+
+                # report test diagnostics
+                normalizer_test = len(self.valid_loader.dataset)
+                total_epoch_loss_test = test_loss / normalizer_test
+                test_elbo.append(total_epoch_loss_test)
+                print(
+                    "[epoch %03d]  average test loss: %.4f" % (epoch, total_epoch_loss_test)
+                )
+
+            if epoch > 5:
+                torch.save(self.model.state_dict(), self.run_save_dir + '{}_epoch_{}.pth'.format("vaeconv", epoch))
+            self.plot_ae_outputs(epoch_id=epoch)
+        plt.figure()
+        plt.semilogy(train_elbo, label="Train")
+        plt.semilogy(test_elbo, label="Valid")
+        plt.xlabel("Epoch")
+        plt.ylabel("Average Loss")
+        plt.legend()
+        plt.savefig(self.run_save_dir + "LossIter.png", format="png", dpi=300)
+        plt.close()
+        #     if epoch == args.tsne_iter:
+        #         mnist_test_tsne(vae=vae, test_loader=test_loader)
+        #         plot_llk(np.array(train_elbo), np.array(test_elbo))
+        #
+        # return vae
+
 
 if __name__ == '__main__':
     # trainer = TrainerCVAEMNIST(istrain=True, istest=False)
     # trainer.set_config("iscond", True)
     # trainer.set_config("ismix", True)
     # trainer.train()
-    trainer = TrainerCVAEMNIST(istrain=False, istest=True)
-    trainer.generate(resume_path="202404151323ep35la16kl0001cond", iscond=True)
+    # trainer = TrainerCVAEMNIST(istrain=False, istest=True)
+    # trainer.generate(resume_path="202404151323ep35la16kl0001cond", iscond=True)
+
+    trainer = TrainerCVAEMNIST(istrain=True, istest=True)
+    trainer.set_config("iscond", False)
+    trainer.set_config("ismix", False)
+    trainer.set_config("cond_dim", 0)
+    trainer.train_svi()
+    # trainer.generate(resume_path="202404151323ep35la16kl0001cond", iscond=True)

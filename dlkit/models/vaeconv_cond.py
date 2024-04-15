@@ -8,6 +8,8 @@ from collections import OrderedDict
 
 import torch
 import torch.nn as nn
+import pyro
+import pyro.distributions as dist
 
 
 class VAE(nn.Module):
@@ -44,11 +46,71 @@ class VAE(nn.Module):
             res = res.squeeze(0)
         return res
 
+
+class VAESVI(nn.Module):
+    def __init__(self, shape, nhid=16, iscond=False, cond_dim=10):
+        super(VAESVI, self).__init__()
+        self.dim = nhid
+        self.iscond, self.cond_dim = iscond, cond_dim
+        self.encoder = Encoder(shape, nhid, ncond=cond_dim)
+        self.decoder = Decoder(shape, nhid, ncond=cond_dim)
+
+    def sampling(self, mean, logvar, device=torch.device("cuda")):
+        eps = torch.randn(mean.shape).to(device)
+        sigma = 0.5 * torch.exp(logvar)
+        return mean + eps * sigma
+
     def model(self, x):
-        pass
+        """后验概率模型"""
+        pyro.module("decoder", self.decoder)
+        with pyro.plate("data", x.shape[0]):
+            # setup hyperparameters for prior p(z)
+            z_loc = torch.zeros(x.shape[0], self.z_dim, dtype=x.dtype, device=x.device)
+            z_scale = torch.ones(x.shape[0], self.z_dim, dtype=x.dtype, device=x.device)
+            # sample from prior (value will be sampled by guide when computing the ELBO)
+            z = pyro.sample("latent", dist.Normal(z_loc, z_scale).to_event(1))
+
+            # decode the latent code z
+            loc_img = self.decoder.forward(z)
+            # score against actual images (with relaxed Bernoulli values)
+            pyro.sample(
+                "obs",
+                dist.Bernoulli(loc_img, validate_args=False).to_event(1),
+                obs=x.reshape(-1, 784),
+            )
+            # return the loc so we can visualize it later
+            return loc_img
 
     def guide(self, x):
-        pass
+        """简单分布，去逼近后验概率模型"""
+        pyro.module("encoder", self.encoder)
+        with pyro.plate("data", x.shape[0]):
+            z_loc, z_scale = self.encoder.forward(x)
+            z = dist.Normal(z_loc, z_scale+1)
+            pyro.sample("latent", z.to_event(1))
+
+    def reconstruct_img(self, x):
+        z_loc, z_scale = self.encoder(x)
+        z = dist.Normal(z_loc, z_scale).sample()
+        loc_img = self.decoder(z)
+        return loc_img
+
+        # define a helper function to sample from p(z) and output p(x|z)
+    def sample_img(self, num_samples, return_z=False):
+        # sample from p(z)
+        z = self.z_prior(num_samples).sample()
+        loc_img = self.decoder.forward(z)
+        if return_z:
+            return loc_img, z
+        else:
+            return loc_img
+
+    def z_prior(self, num_samples):
+        # sample from p(z)
+        z_loc = torch.zeros(num_samples, self.z_dim)
+        z_scale = torch.ones(num_samples, self.z_dim)
+        z = dist.Normal(z_loc, z_scale)
+        return z
 
 
 class cVAE(nn.Module):
