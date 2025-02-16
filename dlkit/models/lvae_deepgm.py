@@ -112,7 +112,7 @@ class LadderDeepGenerativeModel(DeepGenerativeModel):
 
         self.encoder = nn.ModuleList(encoder_layers)
         self.decoder = nn.ModuleList(decoder_layers)
-        self.reconstruction = Decoder([z_dim[0]+y_dim, h_dim, x_dim])
+        self.reconstruction = Decoder([z_dim[0] + y_dim, h_dim, x_dim])
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 init.xavier_normal_(m.weight.data)
@@ -156,5 +156,9 @@ class LadderDeepGenerativeModel(DeepGenerativeModel):
 
 
 if __name__ == '__main__':
-    ldgm = LadderDeepGenerativeModel([784, 10, [32, 16, 8], [128, 128, 128]])
-    print(ldgm)
+    # ldgm = LadderDeepGenerativeModel([784, 10, [32, 16, 8], [128, 128, 128]])
+    # print(ldgm)
+
+    x = torch.randn(size=(16, 3, 288, 128))
+    y = None
+    print(torch.cat([x, y], dim=1))

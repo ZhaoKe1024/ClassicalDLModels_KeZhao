@@ -358,5 +358,5 @@ if __name__ == '__main__':
     trainer.set_config("iscond", False)
     trainer.set_config("ismix", False)
     trainer.set_config("cond_dim", 0)
-    trainer.train_svi()
+    trainer.train()
     # trainer.generate(resume_path="202404151323ep35la16kl0001cond", iscond=True)

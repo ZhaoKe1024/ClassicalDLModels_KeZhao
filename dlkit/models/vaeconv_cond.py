@@ -166,19 +166,24 @@ class Encoder(nn.Module):
         c, h, w = shape
         ww = ((w - 8) // 2 - 4) // 2
         hh = ((h - 8) // 2 - 4) // 2
-        self.encode = nn.Sequential(nn.Conv2d(c, 16, 5, padding=0), nn.BatchNorm2d(16), nn.ReLU(inplace=True),
+        self.encode_conv = nn.Sequential(nn.Conv2d(c, 16, 5, padding=0), nn.BatchNorm2d(16), nn.ReLU(inplace=True),
                                     nn.Conv2d(16, 32, 5, padding=0), nn.BatchNorm2d(32), nn.ReLU(inplace=True),
                                     nn.MaxPool2d(2, 2),
                                     nn.Conv2d(32, 64, 3, padding=0), nn.BatchNorm2d(64), nn.ReLU(inplace=True),
                                     nn.Conv2d(64, 64, 3, padding=0), nn.BatchNorm2d(64), nn.ReLU(inplace=True),
                                     nn.MaxPool2d(2, 2),
-                                    Flatten(), MLP([ww * hh * 64, 256, 128])
                                     )
+        self.encode_mlp = nn.Sequential(
+                                    Flatten(), MLP([ww * hh * 64, 256, 128]))
         self.calc_mean = MLP([128 + ncond, 64, nhid], last_activation=False)
         self.calc_logvar = MLP([128 + ncond, 64, nhid], last_activation=False)
 
     def forward(self, x, y=None):
-        x = self.encode(x)
+        x = self.encode_conv(x)
+        print("shape of feature map:", x.shape)
+        x = self.encode_mlp(x)
+        print("shape of latent vector:", x.shape)
+
         if (y is None):
             return self.calc_mean(x), self.calc_logvar(x)
         else:
@@ -226,5 +231,3 @@ class MLP(nn.Module):
 
     def forward(self, x):
         return self.mlp(x)
-
-

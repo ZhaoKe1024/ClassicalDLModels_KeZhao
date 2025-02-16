@@ -13,6 +13,15 @@ cuda = True if torch.cuda.is_available() else False
 FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
 
+def onehotvector(labels, class_num: int):
+    if labels.ndim == 1:
+        labels = labels.unsqueeze(1)
+    batch_size = labels.shape[0]
+    y_label = torch.ones(size=(batch_size, class_num))
+    y_label.scatter_(1, labels, 1)
+    return y_label
+
+
 def onehot(k):
     """
     Converts a number to its one-hot or 1-of-k representation
@@ -20,11 +29,13 @@ def onehot(k):
     :param k: (int) length of vector
     :return: onehot function
     """
+
     def encode(label):
         y = torch.zeros(k)
         if label < k:
             y[label] = 1
         return y
+
     return encode
 
 
@@ -39,6 +50,7 @@ def enumerate_discrete(x, y_dim):
     :param y_dim: number of total labels
     :return variable
     """
+
     def batch(batch_size, label):
         labels = (torch.ones(batch_size, 1) * label).type(torch.LongTensor)
         y = torch.zeros((batch_size, y_dim))
@@ -101,3 +113,9 @@ def setup_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
+
+
+if __name__ == '__main__':
+    v = enumerate_discrete(x=torch.randn(size=(5, 2, 4)), y_dim=3)
+    print(v)
+    print(v.shape)
