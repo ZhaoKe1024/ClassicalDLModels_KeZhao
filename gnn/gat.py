@@ -1,0 +1,6 @@
+#!/user/zhao/miniconda3/envs/torch-0
+# -*- coding: utf_8 -*-
+# @Time : 2025/2/17 16:08
+# @Author: ZhaoKe
+# @File : gat.py
+# @Software: PyCharm
