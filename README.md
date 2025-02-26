@@ -34,6 +34,34 @@ InfoGAN:
 - GAT, Graph Attention Neural Network
 - explore research about GNN and Multi-Head Attention Layer
 
+### Heterogeneous Neural Network
+- ./gnn/hgnn_fjsp.py
+    
+    - Mode reference: *WenSong, Flexible_Job-Shop_Scheduling_via_Graph_Neural_Network_and_Deep_Reinforcement_Learning*
+    - The code is simplified on the basis of Reference: [https://github.com/songwenas12/fjsp-drl](https://github.com/songwenas12/fjsp-drl)
+    
+    Basic Properties:
+    - Node Types: Operation, Embedding    
+    - Edge Types: batch_idxes, Matrix 1~6
+    - batch_idxes: (batch_size, 1)
+
+    Feature(Matrix1, Matrix2, Matrix3):
+    - Matrix1: T_{ij}, the process time of the operation i executed on machine j.
+    - Matrix2: feature latent of operation(batch_size, operation_latent_dim, operations)
+    - Matrix3: feature latent of machine(batch_size, machine_latent_dim, machines)
+
+    Node Type 1: Feature of Operation:
+    - matrix4: machine - operation
+    - matrix5: operation_0 -> operation_1
+    - matrix6: operation_1 -> operation_2
+    - batch_idxes
+    - feature
+    
+    Node Type 2: Feature of Machines:
+    - matrix4: machine - operation
+    - batch_idxes
+    - feature
+- ...
 
 ### Attention
 ./attn/*
